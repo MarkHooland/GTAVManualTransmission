@@ -183,3 +183,4 @@ void startStopEngine();
 
 void drawSteeringLines(float steeringAngle);
 float getSteeringAngle(Vehicle v);
+std::vector<bool> getWheelLockups(Vehicle handle);

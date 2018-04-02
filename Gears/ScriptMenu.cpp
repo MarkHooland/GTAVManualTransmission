@@ -29,6 +29,8 @@ extern int textureWheelId;
 const std::string escapeKey = "BACKSPACE";
 const std::string skipKey = "RIGHT";
 
+extern bool g_CustomABS;
+
 // FontName, fontID
 std::vector<std::string> fonts{
     { "Chalet London" },
@@ -186,6 +188,8 @@ void onMenuClose() {
 void update_mainmenu() {
     menu.Title("Manual Transmission", 0.90f);
     menu.Subtitle(std::string("~b~") + DISPLAY_VERSION);
+
+    menu.BoolOption("Enable ABS", g_CustomABS);
 
     for(auto device : carControls.FreeDevices) {
         if (menu.Option(device.name, NativeMenu::solidRed, 

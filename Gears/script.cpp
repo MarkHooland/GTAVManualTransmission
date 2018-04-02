@@ -76,6 +76,8 @@ extern std::vector<std::string> speedoTypes;
 
 MiniPID pid(1.0, 0.0, 0.0);
 
+bool g_CustomABS;
+
 bool isPlayerAvailable() {
     if (!PLAYER::IS_PLAYER_CONTROL_ON(player) || 
         PLAYER::IS_PLAYER_BEING_ARRESTED(player, TRUE) || 
@@ -236,6 +238,65 @@ void update_misc_features() {
     functionHidePlayerInFPV();
 }
 
+std::vector<bool> getWheelLockups(Vehicle handle) {
+    std::vector<bool> lockups;
+    float velocity = ENTITY::GET_ENTITY_VELOCITY(vehicle).y;
+    auto wheelsSpeed = ext.GetWheelRotationSpeeds(vehicle);
+    for (auto wheelSpeed : wheelsSpeed) {
+        if (abs(velocity) > 0.01f && wheelSpeed == 0.0f)
+            lockups.push_back(true);
+        else
+            lockups.push_back(false);
+    }
+    return lockups;
+}
+
+void handleBrakePatch() {
+    bool lockedUp = false;
+    bool ebrk = ext.GetHandbrake(vehicle);
+    bool brn = VEHICLE::IS_VEHICLE_IN_BURNOUT(vehicle);
+
+    auto lockUps = getWheelLockups(vehicle);
+    auto susps = ext.GetWheelCompressions(vehicle);
+
+    for (int i = 0; i < ext.GetNumWheels(vehicle); i++) {
+        if (lockUps[i] && susps[i] > 0.001f)
+            lockedUp = true;
+    }
+    if (ebrk || brn)
+        lockedUp = false;
+
+    if (g_CustomABS && lockedUp) {
+        if (!MemoryPatcher::BrakeDecrementPatched) {
+            MemoryPatcher::PatchBrakeDecrement();
+        }
+        for (int i = 0; i < lockUps.size(); i++) {
+            ext.SetWheelBrakePressure(vehicle, i, ext.GetWheelBrakePressure(vehicle)[i] * 0.9f);
+        }
+        //showText(0.5, 0.1, 1.0, "~r~ABS ACTIVE~w~");
+    }
+    else {
+        if (vehData.EngBrakeActive || vehData.EngLockActive) {
+            if (!MemoryPatcher::BrakeDecrementPatched) {
+                MemoryPatcher::PatchBrakeDecrement();
+            }
+        }
+        else if (vehData.InduceBurnout) {
+            if (!MemoryPatcher::BrakeDecrementPatched) {
+                MemoryPatcher::PatchBrakeDecrement();
+            }
+            for (int i = 0; i < ext.GetNumWheels(vehicle); i++) {
+                ext.SetWheelBrakePressure(vehicle, i, 0.0f);
+            }
+        }
+        else {
+            if (MemoryPatcher::BrakeDecrementPatched) {
+                MemoryPatcher::RestoreBrakeDecrement();
+            }
+        }
+    }
+}
+
 // Only when mod is working or writes clutch stuff.
 // Called inside manual transmission part!
 // Mostly optional stuff.
@@ -289,24 +350,7 @@ void update_manual_features() {
         }
     }
 
-    if (vehData.EngBrakeActive || vehData.EngLockActive) {
-        if (!MemoryPatcher::BrakeDecrementPatched) {
-            MemoryPatcher::PatchBrakeDecrement();
-        }
-    }
-    else if (vehData.InduceBurnout) {
-        if (!MemoryPatcher::BrakeDecrementPatched) {
-            MemoryPatcher::PatchBrakeDecrement();
-        }
-        for (int i = 0; i < ext.GetNumWheels(vehicle); i++) {
-            ext.SetWheelBrakePressure(vehicle, i, 0.0f);
-        }
-    }
-    else {
-        if (MemoryPatcher::BrakeDecrementPatched) {
-            MemoryPatcher::RestoreBrakeDecrement();
-        }
-    }
+    handleBrakePatch();
 
     if (gearRattle.Active) {
         if (carControls.ClutchVal > 1.0f - settings.ClutchThreshold ||
