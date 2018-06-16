@@ -30,6 +30,7 @@
 #include "Util/UIUtils.h"
 #include "Util/MiscEnums.h"
 #include "Util/StringFormat.h"
+#include "Util/TimeHelper.hpp"
 
 const std::string mtPrefix = "~b~Manual Transmission~w~~n~";
 
@@ -353,6 +354,34 @@ void update_manual_features() {
     }
 }
 
+void updateShifting() {
+    if (!gearStates.Shifting)
+        return;
+
+    //bool shiftingUp = gearStates.NextGear > gearStates.LockGear;
+    auto handlingPtr = ext.GetHandlingPtr(vehicle);
+    auto rateUp = *reinterpret_cast<float*>(handlingPtr + hOffsets.fClutchChangeRateScaleUpShift);
+    //auto rateDown = *reinterpret_cast<float*>(handlingPtr) + hOffsets.fClutchChangeRateScaleDownShift;
+    float shiftRate = rateUp;//shiftingUp ? rateUp : rateDown;
+    shiftRate = shiftRate * GAMEPLAY::GET_FRAME_TIME() * 5.0f;
+
+    if (gearStates.NextGear != gearStates.LockGear) {
+        gearStates.ClutchVal += shiftRate;
+    }
+    if (gearStates.ClutchVal >= 1.0f && gearStates.LockGear != gearStates.NextGear) {
+        gearStates.LockGear = gearStates.NextGear;
+        return;
+    }
+    if (gearStates.NextGear == gearStates.LockGear) {
+        gearStates.ClutchVal -= shiftRate;
+    }
+
+    if (gearStates.ClutchVal < 0.0f && gearStates.NextGear == gearStates.LockGear) {
+        gearStates.ClutchVal = 0.0f;
+        gearStates.Shifting = false;
+    }
+}
+
 // Manual Transmission part of the mod
 void update_manual_transmission() {
     if (!isPlayerAvailable(player, playerPed) || !isVehicleAvailable(vehicle, playerPed)) {
@@ -415,6 +444,13 @@ void update_manual_transmission() {
     }
 
     functionLimiter();
+
+    updateShifting();
+
+    showText(0.35, 0.05, 0.5, "Shifting: " + std::string(gearStates.Shifting ? "Y" : "N"));
+    showText(0.35, 0.10, 0.5, "Clutch: " + std::to_string(gearStates.ClutchVal));
+    showText(0.35, 0.15, 0.5, "Lock: " + std::to_string(gearStates.LockGear));
+    showText(0.35, 0.20, 0.5, "Next: " + std::to_string(gearStates.NextGear));
 
     // Finally, update memory each loop
     handleRPM();
@@ -651,11 +687,19 @@ void cycleShiftMode() {
 
 void shiftTo(int gear, bool autoClutch) {
     if (autoClutch) {
-        carControls.ClutchVal = 1.0f;
-        CONTROLS::DISABLE_CONTROL_ACTION(0, ControlVehicleAccelerate, true);
+        if (gearStates.Shifting)
+            return;
+        gearStates.ShiftInit = milliseconds_now();
+        gearStates.ShiftEnd = milliseconds_now() + 1000; // TODO: Actual rate/time?
+        gearStates.NextGear = gear;
+        gearStates.Shifting = true;
+        gearStates.ClutchVal = 0.0f;
     }
-    gearStates.LockGear = gear;
+    else {
+        gearStates.LockGear = gear;
+    }
 }
+
 void functionHShiftTo(int i) {
     if (settings.ClutchShiftingH && vehInfo.HasClutch) {
         if (carControls.ClutchVal > 1.0f - settings.ClutchThreshold) {
@@ -674,7 +718,7 @@ void functionHShiftTo(int i) {
         }
     }
     else {
-        shiftTo(i, true);
+        shiftTo(i, false);
         gearStates.FakeNeutral = false;
         gearRattle.Stop();
     }
@@ -724,7 +768,7 @@ void functionHShiftWheel() {
     }
 
     if (carControls.ButtonReleased(CarControls::WheelControlType::HR)) {
-        shiftTo(1, true);
+        shiftTo(1, false);
         gearStates.FakeNeutral = vehInfo.HasClutch;
     }
 }
@@ -1243,7 +1287,14 @@ void fakeRev(bool customThrottle, float customThrottleVal) {
 }
 
 void handleRPM() {
-    float clutch = carControls.ClutchVal;
+    float clutch;
+    
+    if (gearStates.Shifting) {
+        clutch = gearStates.ClutchVal;
+    }
+    else {
+        clutch = carControls.ClutchVal;
+    }
 
     // Ignores clutch 
     if (settings.ShiftMode == Automatic ||

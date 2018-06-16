@@ -109,19 +109,24 @@ struct VehicleMiscStates {
 };
 
 struct VehicleGearboxStates {
-    // Gearbox stuff
-    float StallProgress = 0.0f;
     uint8_t LockGear = 1;
+    uint8_t NextGear = 1;
+    float ClutchVal = 0.0f;
+    bool Shifting = false;
+    time_t ShiftInit = 0;
+    time_t ShiftEnd = 0;
 
     bool FakeNeutral = false;
     bool HitLimiter = false;
 
-    std::array<float, NUM_GEARS> UpshiftSpeedsGame = {};
-    std::array<float, NUM_GEARS> UpshiftSpeedsMod = {};
+    float StallProgress = 0.0f;
 
     // Auto gearbox stuff need to find a better solution/workaround
     DWORD PrevUpshiftTime = 0;
     bool IgnoreAccelerationUpshiftTrigger = false;
+
+    std::array<float, NUM_GEARS> UpshiftSpeedsGame = {};
+    std::array<float, NUM_GEARS> UpshiftSpeedsMod = {};
 };
 
 struct WheelPatchStates {
